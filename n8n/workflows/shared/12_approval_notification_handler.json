@@ -1,0 +1,61 @@
+{
+  "name": "12 - Approval Notification Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf12-node-0001",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/execution_logs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow_id\": \"wf_12_approval_notice\",\n  \"workflow_name\": \"Approval Notification Handler\",\n  \"channel\": \"{{ $json.channel }}\",\n  \"stage\": \"approval\",\n  \"status\": \"success\",\n  \"input_summary\": \"New approval item queued: {{ $json.approvalId || 'pending' }}\",\n  \"output_summary\": \"Notification logged for human review.\"\n}"
+      },
+      "id": "wf12-node-0002",
+      "name": "Log Approval Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Approval Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

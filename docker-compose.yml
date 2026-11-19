@@ -1,0 +1,91 @@
+services:
+  # -------------------------------------------------------------
+  # 1. n8n AUTOMATION ENGINE
+  # -------------------------------------------------------------
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:1.76.0
+    container_name: nabil_ai_n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST:-0.0.0.0}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=${PUBLIC_WEBHOOK_URL:-http://localhost:5678}/
+      - GENERIC_TIMEZONE=${SYSTEM_TIMEZONE:-Asia/Dhaka}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168 # 7 days
+      # Forward system secrets into n8n environment
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_DEFAULT_MODEL=${OPENAI_DEFAULT_MODEL:-gpt-4o}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_DEFAULT_MODEL=${GEMINI_DEFAULT_MODEL:-gemini-2.0-flash}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
+      - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
+      - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN}
+      - GMAIL_USER_EMAIL=${GMAIL_USER_EMAIL}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/data/workflows:ro
+    networks:
+      - nabil_ai_network
+
+  # -------------------------------------------------------------
+  # 2. BACKEND API SERVICE (Express / Node.js)
+  # -------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nabil_ai_backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook
+      - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
+      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
+    depends_on:
+      - n8n
+    networks:
+      - nabil_ai_network
+
+  # -------------------------------------------------------------
+  # 3. FRONTEND DASHBOARD (React + Vite + Nginx)
+  # -------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nabil_ai_frontend
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:80"
+    environment:
+      - VITE_API_URL=http://localhost:4000
+      - VITE_SUPABASE_URL=${SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    depends_on:
+      - backend
+    networks:
+      - nabil_ai_network
+
+volumes:
+  n8n_data:
+    driver: local
+
+networks:
+  nabil_ai_network:
+    driver: bridge

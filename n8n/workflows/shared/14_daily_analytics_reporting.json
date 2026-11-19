@@ -1,0 +1,130 @@
+{
+  "name": "14 - Daily Analytics and Reporting",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 * * *"
+            }
+          ]
+        }
+      },
+      "id": "wf14-node-0001",
+      "name": "Midnight Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?select=channel,direction,created_at&created_at=gte.{{ $today.startOf('day').toISO() }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "wf14-node-0002",
+      "name": "Fetch Today's Raw Message Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const messages = $input.all().map(i => i.json);\n\nlet gmailReceived = 0;\nlet gmailSent = 0;\nlet waReceived = 0;\nlet waSent = 0;\n\nfor (const m of messages) {\n  if (m.channel === 'gmail') {\n    if (m.direction === 'incoming') gmailReceived++;\n    else gmailSent++;\n  } else if (m.channel === 'whatsapp') {\n    if (m.direction === 'incoming') waReceived++;\n    else waSent++;\n  }\n}\n\nreturn [{\n  json: {\n    date: new Date().toISOString().split('T')[0],\n    gmail_received: gmailReceived,\n    gmail_replies_sent: gmailSent,\n    whatsapp_received: waReceived,\n    whatsapp_replies_sent: waSent\n  }\n}];"
+      },
+      "id": "wf14-node-0003",
+      "name": "Aggregate KPI Counters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/daily_analytics?on_conflict=date",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"date\": \"{{ $json.date }}\",\n  \"gmail_received\": {{ $json.gmail_received }},\n  \"gmail_replies_sent\": {{ $json.gmail_replies_sent }},\n  \"whatsapp_received\": {{ $json.whatsapp_received }},\n  \"whatsapp_replies_sent\": {{ $json.whatsapp_replies_sent }}\n}"
+      },
+      "id": "wf14-node-0004",
+      "name": "Upsert Daily Analytics Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 300]
+    }
+  ],
+  "connections": {
+    "Midnight Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Today's Raw Message Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Today's Raw Message Events": {
+      "main": [
+        [
+          {
+            "node": "Aggregate KPI Counters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate KPI Counters": {
+      "main": [
+        [
+          {
+            "node": "Upsert Daily Analytics Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

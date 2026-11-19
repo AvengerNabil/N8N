@@ -1,0 +1,255 @@
+{
+  "name": "01 - Gmail Incoming Message Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "q": "label:INBOX -from:me"
+        }
+      },
+      "id": "wf01-node-0001",
+      "name": "Gmail Trigger (New Emails)",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_OAUTH_CREDENTIAL_ID",
+          "name": "Nabil Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract clean metadata and filter noise\nconst item = $input.first().json;\n\nconst fromRaw = item.from || '';\nlet fromEmail = '';\nlet senderName = '';\n\nif (typeof fromRaw === 'object') {\n  fromEmail = fromRaw.value?.[0]?.address || fromRaw.text || '';\n  senderName = fromRaw.value?.[0]?.name || '';\n} else {\n  const match = fromRaw.match(/(?:\"?([^\"]*)\"?\\s*)?<?([^>]+@[^>]+)>?/);\n  senderName = match ? (match[1] || '').trim() : '';\n  fromEmail = match ? (match[2] || '').trim().toLowerCase() : fromRaw.toLowerCase();\n}\n\nconst subject = (item.subject || '').trim();\nconst snippet = (item.snippet || '').trim();\nlet bodyRaw = item.textPlain || item.snippet || '';\n\n// Basic quote and signature cleaner\nlet bodyClean = bodyRaw\n  .replace(/On\\s+.*\\s+wrote:[\\s\\S]*/gi, '')\n  .replace(/--\\s*\\n[\\s\\S]*/gi, '')\n  .replace(/Sent from my (iPhone|Android|Galaxy|iPad)[\\s\\S]*/gi, '')\n  .trim();\n\nif (!bodyClean) {\n  bodyClean = snippet;\n}\n\n// Anti-spam & automated notifications heuristic check\nconst ignoredKeywords = ['no-reply@', 'noreply@', 'mailer-daemon@', 'donotreply', 'auto-confirm'];\nconst isAutomated = ignoredKeywords.some(keyword => fromEmail.includes(keyword));\n\nreturn [{\n  json: {\n    externalMessageId: item.id,\n    threadId: item.threadId,\n    channel: 'gmail',\n    fromEmail,\n    senderName: senderName || fromEmail.split('@')[0],\n    subject,\n    snippet,\n    bodyRaw,\n    bodyClean,\n    receivedAt: item.internalDate ? new Date(parseInt(item.internalDate, 10)).toISOString() : new Date().toISOString(),\n    isAutomated,\n    shouldProcess: !isAutomated && bodyClean.length > 3\n  }\n}];"
+      },
+      "id": "wf01-node-0002",
+      "name": "Extract & Clean Email Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldProcess }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "wf01-node-0003",
+      "name": "Should Process?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?external_message_id=eq.{{ $json.externalMessageId }}&select=id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "wf01-node-0004",
+      "name": "Check Duplicate in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [860, 240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "equal",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "wf01-node-0005",
+      "name": "Is First Time Seen?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1080, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?on_conflict=external_message_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=ignore-duplicates,return=representation"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": \"gmail\",\n  \"external_message_id\": \"{{ $('Extract & Clean Email Content').item.json.externalMessageId }}\",\n  \"direction\": \"incoming\",\n  \"sender_identifier\": \"{{ $('Extract & Clean Email Content').item.json.fromEmail }}\",\n  \"recipient_identifier\": \"{{ $env.GMAIL_USER_EMAIL || 'nabil@example.com' }}\",\n  \"message_type\": \"text\",\n  \"subject\": \"{{ $('Extract & Clean Email Content').item.json.subject }}\",\n  \"body_raw\": \"{{ $('Extract & Clean Email Content').item.json.bodyRaw.replace(/\"/g, '\\\\\"') }}\",\n  \"body_clean\": \"{{ $('Extract & Clean Email Content').item.json.bodyClean.replace(/\"/g, '\\\\\"') }}\",\n  \"received_at\": \"{{ $('Extract & Clean Email Content').item.json.receivedAt }}\"\n}"
+      },
+      "id": "wf01-node-0006",
+      "name": "Upsert to Supabase Messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 180]
+    },
+    {
+      "parameters": {
+        "workflowId": "wf02-gmail-ai-classification",
+        "options": {}
+      },
+      "id": "wf01-node-0007",
+      "name": "Trigger Workflow 02 (AI Classification)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1520, 180]
+    },
+    {
+      "parameters": {
+        "operation": "log",
+        "message": "=Automated or noise message ignored: {{ $json.fromEmail }} - {{ $json.subject }}"
+      },
+      "id": "wf01-node-0008",
+      "name": "Log Ignored Email",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [860, 420]
+    },
+    {
+      "parameters": {
+        "operation": "log",
+        "message": "=Duplicate email message ID skipped: {{ $('Extract & Clean Email Content').item.json.externalMessageId }}"
+      },
+      "id": "wf01-node-0009",
+      "name": "Skip Duplicate Email",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1300, 320]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger (New Emails)": {
+      "main": [
+        [
+          {
+            "node": "Extract & Clean Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Clean Email Content": {
+      "main": [
+        [
+          {
+            "node": "Should Process?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Process?": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Ignored Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Is First Time Seen?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is First Time Seen?": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Supabase Messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Duplicate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert to Supabase Messages": {
+      "main": [
+        [
+          {
+            "node": "Trigger Workflow 02 (AI Classification)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

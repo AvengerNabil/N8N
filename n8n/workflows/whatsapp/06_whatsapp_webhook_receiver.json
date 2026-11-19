@@ -1,0 +1,136 @@
+{
+  "name": "06 - WhatsApp Webhook Receiver",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET,POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf06-node-0001",
+      "name": "WhatsApp Meta Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "whatsapp-meta-inbound"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.query ? $json.query['hub.mode'] : '' }}",
+              "value2": "subscribe"
+            }
+          ]
+        }
+      },
+      "id": "wf06-node-0002",
+      "name": "Is Meta Webhook Verification?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}"
+      },
+      "id": "wf06-node-0003",
+      "name": "Return Challenge Token",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"acknowledged\"\n}"
+      },
+      "id": "wf06-node-0004",
+      "name": "Acknowledge HTTP 200 to Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json.body || $input.first().json;\n\n// Basic payload validation\nif (payload.object !== 'whatsapp_business_account') {\n  return [];\n}\n\nconst entry = payload.entry?.[0];\nconst change = entry?.changes?.[0]?.value;\n\n// Ignore delivery receipts / read statuses\nif (!change?.messages || change.messages.length === 0) {\n  return [];\n}\n\nconst contact = change.contacts?.[0] || {};\nconst message = change.messages[0];\n\nreturn [{\n  json: {\n    channel: 'whatsapp',\n    externalMessageId: message.id,\n    senderPhone: message.from,\n    senderName: contact.profile?.name || message.from,\n    messageType: message.type,\n    timestamp: message.timestamp ? new Date(parseInt(message.timestamp, 10) * 1000).toISOString() : new Date().toISOString(),\n    textBody: message.text?.body || '',\n    audioPayload: message.audio || null,\n    imagePayload: message.image || null,\n    documentPayload: message.document || null\n  }\n}];"
+      },
+      "id": "wf06-node-0005",
+      "name": "Extract WhatsApp Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 320]
+    },
+    {
+      "parameters": {
+        "workflowId": "wf07-whatsapp-message-processor",
+        "options": {}
+      },
+      "id": "wf06-node-0006",
+      "name": "Trigger Workflow 07 (Processor)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1140, 320]
+    }
+  ],
+  "connections": {
+    "WhatsApp Meta Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is Meta Webhook Verification?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Meta Webhook Verification?": {
+      "main": [
+        [
+          {
+            "node": "Return Challenge Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Acknowledge HTTP 200 to Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge HTTP 200 to Meta": {
+      "main": [
+        [
+          {
+            "node": "Extract WhatsApp Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract WhatsApp Event": {
+      "main": [
+        [
+          {
+            "node": "Trigger Workflow 07 (Processor)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

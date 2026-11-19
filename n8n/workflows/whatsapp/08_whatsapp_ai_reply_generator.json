@@ -1,0 +1,180 @@
+{
+  "name": "08 - WhatsApp AI Reply Generator",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf08-node-0001",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "wf10-shared-ai-brain",
+        "options": {}
+      },
+      "id": "wf08-node-0002",
+      "name": "Call Shared AI Brain (Workflow 10)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_settings?select=automation_mode&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "wf08-node-0003",
+      "name": "Check Automation Mode",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json[0]?.automation_mode || 'manual_approval' }}",
+              "value2": "full_automation"
+            }
+          ]
+        }
+      },
+      "id": "wf08-node-0004",
+      "name": "Is Auto-Send Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"recipient_type\": \"individual\",\n  \"to\": \"{{ $('Execute Workflow Trigger').item.json.senderPhone }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"preview_url\": false,\n    \"body\": \"{{ $('Call Shared AI Brain (Workflow 10)').item.json.reply_text.replace(/\"/g, '\\\\\"') }}\"\n  }\n}"
+      },
+      "id": "wf08-node-0005",
+      "name": "Send WhatsApp via Meta Cloud API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/approvals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": \"whatsapp\",\n  \"status\": \"pending\",\n  \"proposed_reply\": \"{{ $('Call Shared AI Brain (Workflow 10)').item.json.reply_text.replace(/\"/g, '\\\\\"') }}\"\n}"
+      },
+      "id": "wf08-node-0006",
+      "name": "Queue WhatsApp Pending Approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 400]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call Shared AI Brain (Workflow 10)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Shared AI Brain (Workflow 10)": {
+      "main": [
+        [
+          {
+            "node": "Check Automation Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Automation Mode": {
+      "main": [
+        [
+          {
+            "node": "Is Auto-Send Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Auto-Send Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp via Meta Cloud API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Queue WhatsApp Pending Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

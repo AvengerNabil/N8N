@@ -1,0 +1,140 @@
+{
+  "name": "05 - Gmail Reply Sender",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf05-node-0001",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "={{ $json.draftSubject || $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.finalReply || $json.generatedReply }}",
+        "options": {
+          "threadId": "={{ $json.threadId }}",
+          "toRecipients": [
+            "={{ $json.fromEmail }}"
+          ]
+        }
+      },
+      "id": "wf05-node-0002",
+      "name": "Send Gmail Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [440, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_OAUTH_CREDENTIAL_ID",
+          "name": "Nabil Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": \"gmail\",\n  \"external_message_id\": \"{{ $json.id }}\",\n  \"direction\": \"outgoing\",\n  \"sender_identifier\": \"{{ $env.GMAIL_USER_EMAIL || 'nabil@example.com' }}\",\n  \"recipient_identifier\": \"{{ $('Execute Workflow Trigger').item.json.fromEmail }}\",\n  \"message_type\": \"text\",\n  \"body_raw\": \"{{ $('Execute Workflow Trigger').item.json.finalReply || $('Execute Workflow Trigger').item.json.generatedReply }}\"\n}"
+      },
+      "id": "wf05-node-0003",
+      "name": "Log Outgoing Message in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/increment_analytics_counter",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"metric\": \"gmail_replies_sent\"\n}"
+      },
+      "id": "wf05-node-0004",
+      "name": "Increment Gmail Sent Counter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail Reply": {
+      "main": [
+        [
+          {
+            "node": "Log Outgoing Message in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Outgoing Message in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Increment Gmail Sent Counter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

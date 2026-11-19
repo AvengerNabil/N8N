@@ -1,0 +1,61 @@
+{
+  "name": "13 - Failed Execution and Retry Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf13-node-0001",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/execution_logs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow_id\": \"{{ $json.workflow.id }}\",\n  \"workflow_name\": \"{{ $json.workflow.name }}\",\n  \"execution_id\": \"{{ $json.execution.id }}\",\n  \"channel\": \"system\",\n  \"stage\": \"error_handling\",\n  \"status\": \"error\",\n  \"error_message\": \"{{ $json.execution.error.message.replace(/\"/g, '\\\\\"') }}\",\n  \"error_stack\": \"{{ $json.execution.error.stack ? $json.execution.error.stack.replace(/\"/g, '\\\\\"') : '' }}\"\n}"
+      },
+      "id": "wf13-node-0002",
+      "name": "Record Failure in Supabase Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Record Failure in Supabase Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

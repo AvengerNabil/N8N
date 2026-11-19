@@ -1,0 +1,66 @@
+{
+  "system": {
+    "name": "NABIL AI ASSISTANT",
+    "version": "1.0.0",
+    "tagline": "One Assistant. All Conversations. Zero Manual Replies.",
+    "owner": {
+      "name": "Nabil Rahaman",
+      "email": "nabil.assistant.hq@gmail.com",
+      "whatsapp": "+8801700112233",
+      "timezone": "Asia/Dhaka"
+    }
+  },
+  "automation": {
+    "mode": "manual_approval",
+    "channels": {
+      "gmail": {
+        "enabled": true,
+        "defaultAction": "create_draft",
+        "pollIntervalMinutes": 1,
+        "ignoredSenders": ["no-reply@", "noreply@", "mailer-daemon@", "notifications@"],
+        "ignoredCategories": ["promotional", "spam_suspicious"]
+      },
+      "whatsapp": {
+        "enabled": true,
+        "defaultAction": "queue_for_approval",
+        "supportedMedia": ["text", "audio", "image", "document"],
+        "maxVoiceDurationSeconds": 120,
+        "languageDetection": "adaptive"
+      }
+    },
+    "rateLimiting": {
+      "maxRepliesPerContactPerDay": 10,
+      "minimumResponseDelaySeconds": 25,
+      "maximumResponseDelaySeconds": 60
+    }
+  },
+  "ai": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "fallbackProvider": "gemini",
+    "fallbackModel": "gemini-2.0-flash",
+    "temperature": 0.35,
+    "personalities": {
+      "professional": {
+        "description": "Courteous, business-grade, concise, structured",
+        "signoff": "Kind regards,\nNabil Rahaman"
+      },
+      "academic": {
+        "description": "Scholarly, formal, respectful, rigorous",
+        "signoff": "Respectfully,\nNabil Rahaman"
+      },
+      "friendly": {
+        "description": "Warm, conversational, empathetic, natural",
+        "signoff": "Best,\nNabil"
+      },
+      "casual": {
+        "description": "Informal, relaxed, supportive",
+        "signoff": "- Nabil"
+      },
+      "short_direct": {
+        "description": "Single sentence answers, essential facts only",
+        "signoff": ""
+      }
+    }
+  }
+}

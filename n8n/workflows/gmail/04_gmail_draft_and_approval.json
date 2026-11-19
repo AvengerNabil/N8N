@@ -1,0 +1,183 @@
+{
+  "name": "04 - Gmail Draft and Approval",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf04-node-0001",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/automation_settings?select=automation_mode&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "wf04-node-0002",
+      "name": "Get Automation Mode",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json[0]?.automation_mode || 'manual_approval' }}",
+              "value2": "full_automation"
+            }
+          ]
+        }
+      },
+      "id": "wf04-node-0003",
+      "name": "Is Full Automation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{ $('Execute Workflow Trigger').item.json.draftSubject }}",
+        "emailType": "text",
+        "message": "={{ $('Execute Workflow Trigger').item.json.generatedReply }}",
+        "options": {
+          "threadId": "={{ $('Execute Workflow Trigger').item.json.threadId }}",
+          "toRecipients": [
+            "={{ $('Execute Workflow Trigger').item.json.fromEmail }}"
+          ]
+        }
+      },
+      "id": "wf04-node-0004",
+      "name": "Create Gmail Draft in Thread",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [880, 420],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_OAUTH_CREDENTIAL_ID",
+          "name": "Nabil Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/approvals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": \"gmail\",\n  \"status\": \"pending\",\n  \"proposed_reply\": \"{{ $('Execute Workflow Trigger').item.json.generatedReply.replace(/\"/g, '\\\\\"') }}\",\n  \"external_draft_id\": \"{{ $json.id || 'draft-pending' }}\"\n}"
+      },
+      "id": "wf04-node-0005",
+      "name": "Insert Pending Approval into Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "workflowId": "wf05-gmail-reply-sender",
+        "options": {}
+      },
+      "id": "wf04-node-0006",
+      "name": "Trigger Workflow 05 (Send Directly)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [880, 180]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Automation Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Automation Mode": {
+      "main": [
+        [
+          {
+            "node": "Is Full Automation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Full Automation?": {
+      "main": [
+        [
+          {
+            "node": "Trigger Workflow 05 (Send Directly)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Gmail Draft in Thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Gmail Draft in Thread": {
+      "main": [
+        [
+          {
+            "node": "Insert Pending Approval into Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

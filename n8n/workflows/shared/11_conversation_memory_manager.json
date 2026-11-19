@@ -1,0 +1,75 @@
+{
+  "name": "11 - Conversation Memory Manager",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf11-node-0001",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?channel=eq.{{ $json.channel }}&or=(sender_identifier.eq.{{ $json.senderPhone || $json.fromEmail }},recipient_identifier.eq.{{ $json.senderPhone || $json.fromEmail }})&order=received_at.desc&limit=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "wf11-node-0002",
+      "name": "Fetch Recent Conversation Turns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\n\n// Format recent messages in chronological order\nconst chronological = items.reverse();\nconst historyLines = chronological.map(msg => {\n  const speaker = msg.direction === 'outgoing' ? 'Nabil (Assistant)' : 'Contact';\n  const text = msg.body_clean || msg.body_raw || '';\n  return `${speaker}: ${text}`;\n});\n\nreturn [{\n  json: {\n    historyContext: historyLines.join('\\n'),\n    turnsCount: chronological.length\n  }\n}];"
+      },
+      "id": "wf11-node-0003",
+      "name": "Format History Buffer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Recent Conversation Turns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Conversation Turns": {
+      "main": [
+        [
+          {
+            "node": "Format History Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

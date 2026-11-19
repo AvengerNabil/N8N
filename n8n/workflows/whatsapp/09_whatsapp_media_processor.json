@@ -1,0 +1,225 @@
+{
+  "name": "09 - WhatsApp Media Processor",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf09-node-0001",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.messageType }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "audio"
+            },
+            {
+              "value2": "image"
+            },
+            {
+              "value2": "document"
+            }
+          ]
+        }
+      },
+      "id": "wf09-node-0002",
+      "name": "Branch on Media Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.audioPayload.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "wf09-node-0003",
+      "name": "Get Audio Media URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "language",
+              "value": "bn"
+            }
+          ]
+        }
+      },
+      "id": "wf09-node-0004",
+      "name": "Transcribe Voice with Whisper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Describe the key content, text, or visual inquiry in this image concisely so Nabil's assistant can answer appropriately.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Analyze this image sent by the contact.\"\n        }\n      ]\n    }\n  ]\n}"
+      },
+      "id": "wf09-node-0005",
+      "name": "Analyze Image with Vision AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Execute Workflow Trigger').first().json;\nlet processedText = '';\n\nif (original.messageType === 'audio') {\n  processedText = $('Transcribe Voice with Whisper').first().json.text || '[Voice Note Transcribed]';\n} else if (original.messageType === 'image') {\n  processedText = $('Analyze Image with Vision AI').first().json.choices?.[0]?.message?.content || '[Image Content Analyzed]';\n} else {\n  processedText = '[Document Received: ' + (original.documentPayload?.filename || 'File') + ']';\n}\n\nreturn [{\n  json: {\n    ...original,\n    textBody: processedText,\n    isMediaProcessed: true\n  }\n}];"
+      },
+      "id": "wf09-node-0006",
+      "name": "Consolidate Media Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 240]
+    },
+    {
+      "parameters": {
+        "workflowId": "wf08-whatsapp-ai-reply-generator",
+        "options": {}
+      },
+      "id": "wf09-node-0007",
+      "name": "Forward to WhatsApp Reply Generator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1360, 240]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Branch on Media Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Branch on Media Type": {
+      "main": [
+        [
+          {
+            "node": "Get Audio Media URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Analyze Image with Vision AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consolidate Media Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Audio Media URL": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice with Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice with Whisper": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Media Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Image with Vision AI": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Media Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidate Media Content": {
+      "main": [
+        [
+          {
+            "node": "Forward to WhatsApp Reply Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

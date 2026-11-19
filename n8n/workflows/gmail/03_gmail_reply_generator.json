@@ -1,0 +1,135 @@
+{
+  "name": "03 - Gmail Reply Generator",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf03-node-0001",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/contacts?primary_email=eq.{{ $json.fromEmail }}&select=*,contact_preferences(*)",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "wf03-node-0002",
+      "name": "Fetch Contact & Preferences",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $env.OPENAI_DEFAULT_MODEL || 'gpt-4o' }}\",\n  \"temperature\": 0.35,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are Nabil's trusted AI Executive Assistant generating an email reply on his behalf.\\n\\nRules:\\n- Category: {{ $('Execute Workflow Trigger').item.json.classification.category }}\\n- Detected Language: {{ $('Execute Workflow Trigger').item.json.classification.language || 'English' }}\\n- If academic: Adopt scholarly, formal, respectful language.\\n- If professional/job: Clear, confident, concise, courteous.\\n- If personal: Friendly, warm, natural.\\n- Never fabricate attachments or claim files were attached.\\n- Never commit to legal or financial agreements.\\n- Keep the tone human-like, eliminating robotic phrases like 'I hope this email finds you well'.\\n- Sign off as: Nabil Rahaman\\n\\nOutput ONLY the clean email body without greetings or subject headers already included in Gmail's standard view.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Sender: {{ $('Execute Workflow Trigger').item.json.senderName }} <{{ $('Execute Workflow Trigger').item.json.fromEmail }}>\\nSubject: {{ $('Execute Workflow Trigger').item.json.subject }}\\nBody: {{ $('Execute Workflow Trigger').item.json.bodyClean }}\"\n    }\n  ]\n}"
+      },
+      "id": "wf03-node-0003",
+      "name": "Generate Contextual Email Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Execute Workflow Trigger').first().json;\nconst aiRes = $('Generate Contextual Email Reply').first().json;\nconst generatedText = (aiRes.choices?.[0]?.message?.content || '').trim();\n\nconst draftSubject = input.subject.toLowerCase().startsWith('re:') \n  ? input.subject \n  : `Re: ${input.subject}`;\n\nreturn [{\n  json: {\n    ...input,\n    generatedReply: generatedText,\n    draftSubject,\n    requiresApproval: true,\n    modelUsed: 'gpt-4o'\n  }\n}];"
+      },
+      "id": "wf03-node-0004",
+      "name": "Format Draft Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "wf04-gmail-draft-and-approval",
+        "options": {}
+      },
+      "id": "wf03-node-0005",
+      "name": "Trigger Workflow 04 (Draft & Approval)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1160, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Contact & Preferences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Contact & Preferences": {
+      "main": [
+        [
+          {
+            "node": "Generate Contextual Email Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Contextual Email Reply": {
+      "main": [
+        [
+          {
+            "node": "Format Draft Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Draft Payload": {
+      "main": [
+        [
+          {
+            "node": "Trigger Workflow 04 (Draft & Approval)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,194 @@
+{
+  "name": "07 - WhatsApp Message Processor",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf07-node-0001",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?external_message_id=eq.{{ $json.externalMessageId }}&select=id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        }
+      },
+      "id": "wf07-node-0002",
+      "name": "Check Idempotency (Duplicate Prevention)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "equal",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "wf07-node-0003",
+      "name": "Is First-Time Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $('Execute Workflow Trigger').item.json.messageType }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "text"
+            },
+            {
+              "value2": "audio"
+            },
+            {
+              "value2": "image"
+            },
+            {
+              "value2": "document"
+            }
+          ]
+        },
+        "fallbackOutput": 4
+      },
+      "id": "wf07-node-0004",
+      "name": "Route by Media Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [880, 240]
+    },
+    {
+      "parameters": {
+        "workflowId": "wf08-whatsapp-ai-reply-generator",
+        "options": {}
+      },
+      "id": "wf07-node-0005",
+      "name": "Route to Text Reply (Workflow 08)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1160, 140]
+    },
+    {
+      "parameters": {
+        "workflowId": "wf09-whatsapp-media-processor",
+        "options": {}
+      },
+      "id": "wf07-node-0006",
+      "name": "Route to Media Processor (Workflow 09)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1160, 300]
+    },
+    {
+      "parameters": {
+        "operation": "log",
+        "message": "=Duplicate message skipped: {{ $('Execute Workflow Trigger').item.json.externalMessageId }}"
+      },
+      "id": "wf07-node-0007",
+      "name": "Skip Duplicate Message",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [880, 440]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Idempotency (Duplicate Prevention)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Idempotency (Duplicate Prevention)": {
+      "main": [
+        [
+          {
+            "node": "Is First-Time Message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is First-Time Message?": {
+      "main": [
+        [
+          {
+            "node": "Route by Media Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Duplicate Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Media Type": {
+      "main": [
+        [
+          {
+            "node": "Route to Text Reply (Workflow 08)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route to Media Processor (Workflow 09)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route to Media Processor (Workflow 09)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route to Media Processor (Workflow 09)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
